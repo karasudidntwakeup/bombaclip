@@ -1,4 +1,4 @@
-package dev.bombaclip
+package bombaclip.karasu
 
 import android.Manifest
 import android.content.pm.PackageManager

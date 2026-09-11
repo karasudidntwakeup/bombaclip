@@ -6,15 +6,15 @@ plugins {
 }
 
 android {
-    namespace = "dev.bombaclip"
+    namespace = "bombaclip.karasu"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.bombaclip"
+        applicationId = "bombaclip.karasu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "3.0"
     }
 
     signingConfigs {

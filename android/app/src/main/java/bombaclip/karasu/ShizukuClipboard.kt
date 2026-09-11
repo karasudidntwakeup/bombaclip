@@ -1,4 +1,4 @@
-package dev.bombaclip
+package bombaclip.karasu
 
 import android.content.ClipData
 import android.os.Parcel

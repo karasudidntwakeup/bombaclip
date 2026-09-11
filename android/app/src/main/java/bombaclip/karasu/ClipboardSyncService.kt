@@ -1,4 +1,4 @@
-package dev.bombaclip
+package bombaclip.karasu
 
 import android.app.Notification
 import android.app.NotificationChannel

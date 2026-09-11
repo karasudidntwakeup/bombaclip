@@ -1,4 +1,4 @@
-package dev.bombaclip
+package bombaclip.karasu
 
 import android.app.Activity
 import android.content.Intent

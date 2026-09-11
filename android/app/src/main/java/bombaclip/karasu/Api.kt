@@ -1,4 +1,4 @@
-package dev.bombaclip
+package bombaclip.karasu
 
 import org.json.JSONObject
 import java.net.HttpURLConnection
