@@ -2,23 +2,22 @@ package dev.bombaclip
 
 import android.content.ClipData
 import android.os.Parcel
-import android.util.Log
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
+import rikka.shizuku.SystemServiceHelper
 
 object ShizukuClipboard {
 
-    private const val TAG = "bombaclip"
-    private const val TRANSACTION_GET_PRIMARY_CLIP = 4
+    private const val GET_PRIMARY_CLIP = 4
 
+    /** Reads the phone clipboard through Shizuku. The server must run as the
+     *  shell user (uid 2000): Android 15+ denies background reads for the app
+     *  itself, and only com.android.shell is allowed to read in the background. */
     fun read(): String? {
-        if (!Shizuku.pingBinder()) {
-            Log.w(TAG, "shizuku binder dead, cannot read clipboard")
-            return null
-        }
+        if (!Shizuku.pingBinder()) return null
         return try {
             val binder = ShizukuBinderWrapper(
-                rikka.shizuku.SystemServiceHelper.getSystemService("clipboard")
+                SystemServiceHelper.getSystemService("clipboard")
             )
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
@@ -28,22 +27,19 @@ object ShizukuClipboard {
                 data.writeString(null)
                 data.writeInt(0)
                 data.writeInt(0)
-                val ok = binder.transact(TRANSACTION_GET_PRIMARY_CLIP, data, reply, 0)
-                if (!ok) { Log.w(TAG, "transact failed"); return null }
-                        reply.readException()
-                        val clipData = reply.readTypedObject(ClipData.CREATOR)
-                        if (clipData == null) { Log.w(TAG, "clipData null from transact"); return null }
-                        // Only mirror text clips. Image/URI clips come back as
-                        // garbage strings via coerceToText and would loop.
-                        val item = clipData.getItemAt(0)
-                        if (item.uri != null) { Log.i(TAG, "clip is uri/image, skipping"); return null }
-                        item.coerceToText(null)?.toString()
-                    } finally {
+                if (!binder.transact(GET_PRIMARY_CLIP, data, reply, 0)) return null
+                reply.readException()
+                val clip = reply.readTypedObject(ClipData.CREATOR) ?: return null
+                // URI/image clips turn into garbage via coerceToText and would
+                // cause a copy loop, so mirror text clips only.
+                val item = clip.getItemAt(0)
+                if (item.uri != null) return null
+                item.coerceToText(null)?.toString()
+            } finally {
                 data.recycle()
                 reply.recycle()
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "shizuku clipboard read failed", e)
+        } catch (_: Exception) {
             null
         }
     }

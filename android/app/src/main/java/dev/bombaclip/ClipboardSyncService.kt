@@ -13,7 +13,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
@@ -127,21 +126,17 @@ class ClipboardSyncService : Service() {
                     .putString("syncedHost", base)
                     .commit()
             }
-        } catch (e: Exception) {
-            android.util.Log.w("bombaclip", "poll error", e)
+        } catch (_: Exception) {
         }
     }
 
-    /** Reads the phone clipboard via Shizuku (root). This is the reliable path
-     *  for phone->PC when we're in the background: Android 16 denies the plain
-     *  getPrimaryClip() call there, and the OnPrimaryClipChangedListener event
-     *  still arrives but yields nothing readable. */
+    /** Background phone->PC fallback: app-own reads return null on Android 15+,
+     *  so poll via Shizuku (shell uid) instead. */
     private fun pollPhoneClip() {
         val text = ShizukuClipboard.read() ?: return
         val h = sha1(text.toByteArray())
         if (h == lastPhoneHash) return
         lastPhoneHash = h
-        Log.i("bombaclip", "phone clipboard poll: ${text.length} chars")
         Thread { Api.postText(base, text) }.start()
     }
 
@@ -170,22 +165,12 @@ class ClipboardSyncService : Service() {
     /** A phone copy happened. If it's not one we just wrote to the clipboard,
      *  push it to the PC. Set on main thread to avoid re-entrancy issues. */
     private fun onPhoneClipChanged() {
-        Log.i("bombaclip", "clip changed, running=$running")
         if (!running) return
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         val clip = cm.primaryClip
         if (clip == null) {
-            Log.w("bombaclip", "primaryClip null in background, trying Shizuku fallback")
-            val text = ShizukuClipboard.read()
-            if (text == null) {
-                Log.e("bombaclip", "ShizukuClipboard.read() returned null")
-                return
-            }
-            Log.i("bombaclip", "Shizuku fallback got ${text.length} chars")
-            val h = sha1(text.toByteArray())
-            if (h == lastPhoneHash) return
-            lastPhoneHash = h
-            Thread { Api.postText(base, text) }.start()
+            // Background copy on Android 15+: primaryClip is null here, but
+            // our poll loop picks it up via Shizuku seconds later.
             return
         }
         try {
@@ -209,7 +194,7 @@ class ClipboardSyncService : Service() {
                     Api.postText(base, text)
                 }.start()
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // ignore clipboard read races
         }
     }

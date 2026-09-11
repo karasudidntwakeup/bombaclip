@@ -1,18 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- glass rim -->
     <path
-        android:fillColor="#3B82F6"
-        android:pathData="M40,30 h28 a6,6 0 0 1 6,6 v48 a6,6 0 0 1 -6,6 h-28 a6,6 0 0 1 -6,-6 v-48 a6,6 0 0 1 6,-6 z" />
+        android:pathData="M54,54 m-33,0 a33,33 0 1 1 66,0 a33,33 0 1 1 -66,0"
+        android:strokeColor="#45FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- glass shine streaks -->
     <path
-        android:fillColor="#9ECBFF"
-        android:pathData="M46,22 h16 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 v-10 a4,4 0 0 1 4,-4 z" />
+        android:pathData="M28,34 q16,-12 34,-9 q-15,-8 -34,-8 q-10,0 -16,6 q-8,7 16,11 z"
+        android:fillColor="#2EFFFFFF" />
+
+    <!-- yang (light) fish: full disc -->
     <path
-        android:fillColor="#E6E6E6"
-        android:pathData="M42,52 h24 v4 h-24 z" />
+        android:pathData="M54,25 a29,29 0 1 1 -0.01,0 z"
+        android:fillColor="#F5FFFFFF" />
+
+    <!-- yin (dark) fish: right half with classic S-curve -->
     <path
-        android:fillColor="#E6E6E6"
-        android:pathData="M42,62 h24 v4 h-24 z" />
+        android:pathData="M54,25 a29,29 0 0 1 0,58 a14.5,14.5 0 0 1 0,-29 a14.5,14.5 0 0 0 0,-29 z"
+        android:fillColor="#E6162E51" />
+
+    <!-- yang dot (light, in the dark fish's head) -->
+    <path
+        android:pathData="M54,68.5 m-6.2,0 a6.2,6.2 0 1 1 12.4,0 a6.2,6.2 0 1 1 -12.4,0"
+        android:fillColor="#F5FFFFFF" />
+
+    <!-- yin dot (dark, in the light fish's head) -->
+    <path
+        android:pathData="M54,39.5 m-6.2,0 a6.2,6.2 0 1 1 12.4,0 a6.2,6.2 0 1 1 -12.4,0"
+        android:fillColor="#E6162E51" />
 </vector>
