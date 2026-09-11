@@ -22,6 +22,23 @@ class MainActivity : AppCompatActivity() {
     private val requestNotif =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
+    // Shizuku drops permission requests that have no result listener, so
+    // register one up front and re-trigger the dialog if it was dismissed.
+    private val shizukuRequest = {
+        Shizuku.addRequestPermissionResultListener { code, result ->
+            if (result != PackageManager.PERMISSION_GRANTED) {
+                try {
+                    Shizuku.requestPermission(1)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        try {
+            Shizuku.requestPermission(1)
+        } catch (_: Throwable) {
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -56,13 +73,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestShizuku() {
-        if (!Shizuku.pingBinder()) return
-        try {
-            Shizuku.checkSelfPermission()
-        } catch (_: SecurityException) {
+        // The binder arrives asynchronously, so request permission only once
+        // we know the connection to the Shizuku server is live. Sticky = fires
+        // immediately if the binder is already there.
+        Shizuku.addBinderReceivedListenerSticky {
             try {
-                Shizuku.requestPermission(1)
-            } catch (_: Throwable) {
+                Shizuku.checkSelfPermission()
+            } catch (_: SecurityException) {
+                shizukuRequest()
             }
         }
     }

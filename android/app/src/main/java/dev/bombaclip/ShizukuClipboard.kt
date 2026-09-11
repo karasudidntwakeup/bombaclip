@@ -9,10 +9,13 @@ import rikka.shizuku.ShizukuBinderWrapper
 object ShizukuClipboard {
 
     private const val TAG = "bombaclip"
-    private const val TRANSACTION_GET_PRIMARY_CLIP = 2
+    private const val TRANSACTION_GET_PRIMARY_CLIP = 4
 
     fun read(): String? {
-        if (!Shizuku.pingBinder()) return null
+        if (!Shizuku.pingBinder()) {
+            Log.w(TAG, "shizuku binder dead, cannot read clipboard")
+            return null
+        }
         return try {
             val binder = ShizukuBinderWrapper(
                 rikka.shizuku.SystemServiceHelper.getSystemService("clipboard")
@@ -20,17 +23,22 @@ object ShizukuClipboard {
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
             try {
-                data.writeInterfaceToken("com.android.internal.IClipboard")
-                data.writeString("dev.bombaclip")
+                data.writeInterfaceToken("android.content.IClipboard")
+                data.writeString("com.android.shell")
                 data.writeString(null)
-                data.writeString("dev.bombaclip")
+                data.writeInt(0)
                 data.writeInt(0)
                 val ok = binder.transact(TRANSACTION_GET_PRIMARY_CLIP, data, reply, 0)
-                if (!ok) return null
-                reply.readException()
-                val clipData = reply.readTypedObject(ClipData.CREATOR)
-                clipData?.getItemAt(0)?.coerceToText(null)?.toString()
-            } finally {
+                if (!ok) { Log.w(TAG, "transact failed"); return null }
+                        reply.readException()
+                        val clipData = reply.readTypedObject(ClipData.CREATOR)
+                        if (clipData == null) { Log.w(TAG, "clipData null from transact"); return null }
+                        // Only mirror text clips. Image/URI clips come back as
+                        // garbage strings via coerceToText and would loop.
+                        val item = clipData.getItemAt(0)
+                        if (item.uri != null) { Log.i(TAG, "clip is uri/image, skipping"); return null }
+                        item.coerceToText(null)?.toString()
+                    } finally {
                 data.recycle()
                 reply.recycle()
             }

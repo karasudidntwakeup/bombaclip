@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
@@ -27,8 +28,8 @@ class ClipboardSyncService : Service() {
 
     @Volatile private var running = false
     @Volatile private var base = ""
-    private var lastHash = ""
-    private var lastPhoneHash = ""
+    @Volatile private var lastHash = ""
+    @Volatile private var lastPhoneHash = ""
     private var thread: Thread? = null
 
     private val prefs by lazy { getSharedPreferences("bombaclip", MODE_PRIVATE) }
@@ -107,6 +108,7 @@ class ClipboardSyncService : Service() {
     private fun loop() {
         while (running) {
             pollOnce()
+            pollPhoneClip()
             try {
                 Thread.sleep(1500)
             } catch (e: InterruptedException) {
@@ -128,6 +130,19 @@ class ClipboardSyncService : Service() {
         } catch (e: Exception) {
             android.util.Log.w("bombaclip", "poll error", e)
         }
+    }
+
+    /** Reads the phone clipboard via Shizuku (root). This is the reliable path
+     *  for phone->PC when we're in the background: Android 16 denies the plain
+     *  getPrimaryClip() call there, and the OnPrimaryClipChangedListener event
+     *  still arrives but yields nothing readable. */
+    private fun pollPhoneClip() {
+        val text = ShizukuClipboard.read() ?: return
+        val h = sha1(text.toByteArray())
+        if (h == lastPhoneHash) return
+        lastPhoneHash = h
+        Log.i("bombaclip", "phone clipboard poll: ${text.length} chars")
+        Thread { Api.postText(base, text) }.start()
     }
 
     private fun applyToClipboard(s: ClipState) {
@@ -155,11 +170,18 @@ class ClipboardSyncService : Service() {
     /** A phone copy happened. If it's not one we just wrote to the clipboard,
      *  push it to the PC. Set on main thread to avoid re-entrancy issues. */
     private fun onPhoneClipChanged() {
+        Log.i("bombaclip", "clip changed, running=$running")
         if (!running) return
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         val clip = cm.primaryClip
         if (clip == null) {
-            val text = ShizukuClipboard.read() ?: return
+            Log.w("bombaclip", "primaryClip null in background, trying Shizuku fallback")
+            val text = ShizukuClipboard.read()
+            if (text == null) {
+                Log.e("bombaclip", "ShizukuClipboard.read() returned null")
+                return
+            }
+            Log.i("bombaclip", "Shizuku fallback got ${text.length} chars")
             val h = sha1(text.toByteArray())
             if (h == lastPhoneHash) return
             lastPhoneHash = h
