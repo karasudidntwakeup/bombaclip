@@ -8,6 +8,7 @@ data class ClipState(
     val kind: String,
     val hash: String,
     val text: String = "",
+    val ct: String = "text/plain",
 )
 
 object Api {
@@ -33,7 +34,7 @@ object Api {
             200 -> {
                 val j = JSONObject(it.inputStream.bufferedReader().readText())
                 ClipState(j.getString("kind"), j.getString("h"),
-                    j.optString("text", "")) to true
+                    j.optString("text", ""), j.optString("ct", "text/plain")) to true
             }
             else -> null to false
         }

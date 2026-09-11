@@ -9,12 +9,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import java.io.File
 import java.security.MessageDigest
 
@@ -134,9 +134,19 @@ class ClipboardSyncService : Service() {
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         lastPhoneHash = s.hash
         if (s.kind == "image") {
-            val file = File(cacheDir, "clip.$lastHash.png")
+            val ct = s.ct.ifBlank { "image/png" }
+            val ext = when {
+                ct.contains("jpeg") -> "jpg"
+                ct.contains("png") -> "png"
+                ct.contains("webp") -> "webp"
+                ct.contains("gif") -> "gif"
+                else -> "img"
+            }
+            val file = File(cacheDir, "clip.$lastHash.$ext")
             file.writeBytes(Api.image(base, s.hash))
-            cm.setPrimaryClip(ClipData.newRawUri("image/png", Uri.fromFile(file)))
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val description = android.content.ClipDescription("bombaclip", arrayOf(ct))
+            cm.setPrimaryClip(ClipData(description, ClipData.Item(uri)))
         } else {
             cm.setPrimaryClip(ClipData.newPlainText("bombaclip", s.text))
         }
@@ -147,7 +157,15 @@ class ClipboardSyncService : Service() {
     private fun onPhoneClipChanged() {
         if (!running) return
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = cm.primaryClip ?: return
+        val clip = cm.primaryClip
+        if (clip == null) {
+            val text = ShizukuClipboard.read() ?: return
+            val h = sha1(text.toByteArray())
+            if (h == lastPhoneHash) return
+            lastPhoneHash = h
+            Thread { Api.postText(base, text) }.start()
+            return
+        }
         try {
             val desc = clip.description
             if (desc != null && desc.hasMimeType("image/png")) {

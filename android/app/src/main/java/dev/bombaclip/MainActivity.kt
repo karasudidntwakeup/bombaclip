@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import rikka.shizuku.Shizuku
 
 class MainActivity : AppCompatActivity() {
     private lateinit var serverInput: EditText
@@ -41,6 +42,8 @@ class MainActivity : AppCompatActivity() {
             saveAndStart()
         }
 
+        requestShizuku()
+
         // If a host is already configured, sync starts automatically.
         val host = prefs.getString("host", "").orEmpty()
         if (host.isNotEmpty() && !host.startsWith("http")) {
@@ -49,6 +52,18 @@ class MainActivity : AppCompatActivity() {
             Api.token = prefs.getString("token", "").orEmpty()
             ClipboardSyncService.start(this, host)
             statusR("syncing with $host")
+        }
+    }
+
+    private fun requestShizuku() {
+        if (!Shizuku.pingBinder()) return
+        try {
+            Shizuku.checkSelfPermission()
+        } catch (_: SecurityException) {
+            try {
+                Shizuku.requestPermission(1)
+            } catch (_: Throwable) {
+            }
         }
     }
 

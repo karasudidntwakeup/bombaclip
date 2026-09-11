@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -15,9 +17,28 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        val releaseProps = Properties().apply {
+            val f = rootProject.file("keystore.properties")
+            if (f.exists()) f.inputStream().use { load(it) } else {
+                setProperty("storeFile", "keystore/bombaclip.jks")
+                setProperty("storePassword", System.getenv("BOMBACLIP_STORE_PASS") ?: "")
+                setProperty("keyAlias", "bombaclip")
+                setProperty("keyPassword", System.getenv("BOMBACLIP_KEY_PASS") ?: "")
+            }
+        }
+        create("release") {
+            storeFile = rootProject.file(releaseProps.getProperty("storeFile"))
+            storePassword = releaseProps.getProperty("storePassword")
+            keyAlias = releaseProps.getProperty("keyAlias")
+            keyPassword = releaseProps.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -34,4 +55,6 @@ kotlin {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
 }

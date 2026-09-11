@@ -22,6 +22,7 @@ from email.policy import default as email_default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 POLL_MS = 1500
+MAX_BODY = 256 * 1024 * 1024  # reject clipboard writes larger than this
 
 # ------------------------------------------------------------ clipboard
 
@@ -156,6 +157,8 @@ def make_handler(cb, log_requests=False, token=""):
             if not self._authed():
                 return self._send(401, b"unauthorized", "text/plain")
             n = int(self.headers.get("Content-Length", 0))
+            if n > MAX_BODY:
+                return self._send(413, b"too large", "text/plain")
             body = self.rfile.read(n)
             ct = (self.headers.get("Content-Type", "text/plain") or "") \
                 .split(";")[0].strip().lower()
