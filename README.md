@@ -7,13 +7,6 @@ PC:  wl-copy "hello"         ->  paste on any Android app
 Phone: copy in any app (or "Share to bombaclip")  ->  Ctrl+V on the PC
 ```
 
-## Why
-
-Android blocks clipboard reads from background apps (even with a listener).
-bombaclip gets around that on Android 15+ by reading the clipboard through
-Shizuku running as the shell user. It's the hack that works, hidden behind a
-normal sync service.
-
 ## PC side
 
 One file, no dependencies:
