@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
 
         serverInput.setText(prefs.getString("host", getString(R.string.server_hint)))
         tokenInput.setHint("optional shared secret")
+        tokenInput.setText(prefs.getString("token", ""))
 
         findViewById<Button>(R.id.save).setOnClickListener {
             if (Build.VERSION.SDK_INT >= 33 &&
