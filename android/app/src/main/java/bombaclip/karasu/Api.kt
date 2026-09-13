@@ -60,4 +60,12 @@ object Api {
             it.outputStream.use { o -> o.write(bytes) }
             it.responseCode in 200..299
         }
+
+    fun postNotification(host: String, j: JSONObject): Boolean = with(host, "/notification") {
+        it.requestMethod = "POST"
+        it.doOutput = true
+        it.setRequestProperty("Content-Type", "application/json")
+        it.outputStream.use { o -> o.write(j.toString().toByteArray()) }
+        it.responseCode in 200..299
+    }
 }

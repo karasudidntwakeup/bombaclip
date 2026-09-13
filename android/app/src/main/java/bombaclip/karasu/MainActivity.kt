@@ -1,16 +1,15 @@
 package bombaclip.karasu
 
-import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import com.google.android.material.materialswitch.MaterialSwitch
 import rikka.shizuku.Shizuku
 
 class MainActivity : AppCompatActivity() {
@@ -19,8 +18,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusView: TextView
 
     private val prefs by lazy { getSharedPreferences("bombaclip", MODE_PRIVATE) }
-    private val requestNotif =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     // Shizuku drops permission requests that have no result listener, so
     // register one up front and re-trigger the dialog if it was dismissed.
@@ -50,12 +47,21 @@ class MainActivity : AppCompatActivity() {
         tokenInput.setHint("optional shared secret")
         tokenInput.setText(prefs.getString("token", ""))
 
-        findViewById<Button>(R.id.save).setOnClickListener {
-            if (Build.VERSION.SDK_INT >= 33 &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-                requestNotif.launch(Manifest.permission.POST_NOTIFICATIONS)
+        val mirrorSwitch = findViewById<MaterialSwitch>(R.id.mirror_switch)
+
+        mirrorSwitch.isChecked = prefs.getBoolean("mirror_notifs", false)
+
+        mirrorSwitch.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean("mirror_notifs", on).apply()
+        }
+        findViewById<Button>(R.id.grant_access).setOnClickListener {
+            try {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            } catch (_: Exception) {
+                Toast.makeText(this, "open Settings → Notification access", Toast.LENGTH_SHORT).show()
             }
+        }
+        findViewById<Button>(R.id.save).setOnClickListener {
             saveAndStart()
         }
 

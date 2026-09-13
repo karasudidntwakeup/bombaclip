@@ -11,14 +11,16 @@ TLS, no install step -- run it on LAN, point the app at http://<pc-ip>:<port>.
 """
 
 import argparse
+import base64
 import hashlib
+import hmac
+import json as _jsonlib
 import os
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
-from email.parser import BytesParser
-from email.policy import default as email_default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 POLL_MS = 1500
@@ -108,7 +110,7 @@ class Clipboard:
 
 # ------------------------------------------------------------ http
 
-def make_handler(cb, log_requests=False, token=""):
+def make_handler(cb, log_requests=False, token="", notify_cmd=("notify-send",)):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "bombaclip/1.2"
@@ -116,7 +118,9 @@ def make_handler(cb, log_requests=False, token=""):
         def _authed(self):
             if not token:
                 return True
-            return self.headers.get("Authorization") == "Bearer " + token
+            got = self.headers.get("Authorization", "")
+            return got.startswith("Bearer ") and hmac.compare_digest(
+                got[7:].encode("utf-8"), token.encode("utf-8"))
 
         def log_message(self, fmt, *a):
             if log_requests:
@@ -148,7 +152,7 @@ def make_handler(cb, log_requests=False, token=""):
                 if not changed and since == h:
                     return self._send(204, b"")
                 state["h"] = h
-                return self._send(200, json(state))
+                return self._send(200, _json(state))
             if p == "/image":
                 return self._send(200, cb.image if cb.kind == "image" else b"")
             return self._send(404, b"not found", "text/plain")
@@ -156,10 +160,43 @@ def make_handler(cb, log_requests=False, token=""):
         def do_POST(self):
             if not self._authed():
                 return self._send(401, b"unauthorized", "text/plain")
+            p = self.path.split("?")[0]
             n = int(self.headers.get("Content-Length", 0))
             if n > MAX_BODY:
                 return self._send(413, b"too large", "text/plain")
             body = self.rfile.read(n)
+            if p == "/notification":
+                try:
+                    j = _jsonlib.loads(body)
+                except Exception:
+                    return self._send(400, b"bad json", "text/plain")
+                app = j.get("app", "")
+                title = j.get("title", "")
+                text = j.get("text", "")
+                if not app and not title and not text:
+                    return self._send(400, b"empty", "text/plain")
+                args = [*notify_cmd, "-a", app]
+                icon_path = None
+                try:
+                    data = base64.b64decode(j.get("icon", ""))
+                    if data:
+                        fd, icon_path = tempfile.mkstemp(
+                            prefix="bombaclip-", suffix=".png")
+                        with os.fdopen(fd, "wb") as f:
+                            f.write(data)
+                        args += ["-i", icon_path]
+                except Exception:
+                    icon_path = None
+                if not title and not text:
+                    args.append(app)
+                else:
+                    args += [title, text]
+                proc = subprocess.Popen(args, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL)
+                if icon_path:
+                    threading.Thread(target=_cleanup, args=(proc, icon_path),
+                                     daemon=True).start()
+                return self._send(200, b"ok", "text/plain")
             ct = (self.headers.get("Content-Type", "text/plain") or "") \
                 .split(";")[0].strip().lower()
             if ct.startswith("image/"):
@@ -178,9 +215,21 @@ def make_handler(cb, log_requests=False, token=""):
     return Handler
 
 
-def json(state):
+def _json(state):
     import json as _json
     return _json.dumps(state, ensure_ascii=False).encode("utf-8")
+
+
+def _cleanup(proc, path):
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 # ------------------------------------------------------------ page
@@ -258,11 +307,14 @@ def main():
                     help="print one line per incoming request")
     ap.add_argument("--token", default=os.environ.get("BOMBACLIP_TOKEN", ""),
                     help="optional shared secret; app must send it as Bearer")
+    ap.add_argument("--notify", default="notify-send",
+                    help="desktop notification command (default notify-send)")
     args = ap.parse_args()
 
     cb = Clipboard(args.copy.split(), args.paste.split())
     server = ThreadingHTTPServer(
-        (args.host, args.port), make_handler(cb, args.log, args.token))
+        (args.host, args.port),
+        make_handler(cb, args.log, args.token, args.notify.split()))
     ip = lan_ip()
     print(f"bombaclip: http://{ip}:{args.port}")
     print("phone app: set this URL, tap Start. This page is just a view.")

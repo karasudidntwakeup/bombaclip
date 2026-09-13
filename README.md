@@ -37,6 +37,24 @@ dead or unauthorized, phone→PC only works while the app is on screen.
 Works without Shizuku: share text or a photo via the Android share sheet and
 pick bombaclip.
 
+## Notification mirror
+
+Each phone notification pops up on the PC as a desktop notification
+(`notify-send`, app icon + app name + title + text; nothing is stored on
+either side). Swiping on the phone does not close the PC popup — it times
+out on its own.
+
+In the app, flip **"Mirror notifications to PC"** and tap **"Grant
+notification access"**, then allow bombaclip in
+*Settings → Special app access → Notification access*. Override the desktop
+tool with `--notify <cmd>` (default `notify-send`).
+
+The app never requests notification permission, so on Android 13+ its own
+sync notification is hidden from the shade automatically (it still shows
+under *Settings → Active apps*) — you won't get a persistent banner. The
+mirror toggle is the only on/off: off means nothing is read at all — no
+history, no backlog.
+
 ## Build
 
 ```sh
@@ -51,4 +69,6 @@ The release is signed with `keystore/bombaclip.jks` (credentials in
 ## Security
 
 This is a no-TLS tool for a trusted LAN. Anyone on the same network can
-interact with the server if they know the token. Keep it on home Wi-Fi.
+interact with the server if they know the token. Notifications can contain
+secrets (login codes, private messages) and travel plain-text between phone
+and PC — keep it on home Wi-Fi.
