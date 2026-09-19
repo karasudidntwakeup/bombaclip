@@ -72,3 +72,8 @@ This is a no-TLS tool for a trusted LAN. Anyone on the same network can
 interact with the server if they know the token. Notifications can contain
 secrets (login codes, private messages) and travel plain-text between phone
 and PC — keep it on home Wi-Fi.
+
+# generate once and save
+openssl rand -hex 32 > ~/.bombaclip_token
+
+

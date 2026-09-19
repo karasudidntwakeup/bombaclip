@@ -192,10 +192,9 @@ def make_handler(cb, log_requests=False, token="", notify_cmd=("notify-send",)):
                 else:
                     args += [title, text]
                 proc = subprocess.Popen(args, stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL)
-                if icon_path:
-                    threading.Thread(target=_cleanup, args=(proc, icon_path),
-                                     daemon=True).start()
+                                        stderr=subprocess.PIPE)
+                threading.Thread(target=_finish_notify,
+                                 args=(proc, icon_path), daemon=True).start()
                 return self._send(200, b"ok", "text/plain")
             ct = (self.headers.get("Content-Type", "text/plain") or "") \
                 .split(";")[0].strip().lower()
@@ -220,16 +219,23 @@ def _json(state):
     return _json.dumps(state, ensure_ascii=False).encode("utf-8")
 
 
-def _cleanup(proc, path):
+def _finish_notify(proc, path):
+    """Reap a notify-send child: delete the temp icon file and report
+    delivery failures to the log. notify-send exits non-zero when e.g. no
+    org.freedesktop.Notifications owner is on the session bus."""
     try:
-        proc.wait(timeout=10)
+        _, err = proc.communicate(timeout=10)
     except subprocess.TimeoutExpired:
-        pass
-    finally:
+        err = b"timed out waiting for notify-send"
+    if path:
         try:
             os.unlink(path)
         except OSError:
             pass
+    if proc.returncode != 0:
+        msg = (err or b"").decode("utf-8", "replace").strip()
+        print(f"bombaclip: notify-send failed rc={proc.returncode}: {msg}",
+              flush=True)
 
 
 # ------------------------------------------------------------ page
