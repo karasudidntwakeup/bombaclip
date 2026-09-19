@@ -1,8 +1,8 @@
 package bombaclip.karasu
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
@@ -29,12 +30,17 @@ class ClipboardSyncService : Service() {
     @Volatile private var base = ""
     @Volatile private var lastHash = ""
     @Volatile private var lastPhoneHash = ""
+    @Volatile private var failures = 0
     private var thread: Thread? = null
 
     private val prefs by lazy { getSharedPreferences("bombaclip", MODE_PRIVATE) }
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val clipboard by lazy { getSystemService(CLIPBOARD_SERVICE) as ClipboardManager }
 
     companion object {
+        private const val POLL_MS = 1500L
+        private const val MAX_BACKOFF_MS = 15_000L
+
         fun start(context: Context, base: String) {
             ContextCompat.startForegroundService(context,
                 Intent(context, ClipboardSyncService::class.java)
@@ -52,11 +58,9 @@ class ClipboardSyncService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        getSystemService(NOTIFICATION_SERVICE).let {
-            it as NotificationManager
-            it.createNotificationChannel(NotificationChannel("sync", "bombaclip sync",
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .createNotificationChannel(NotificationChannel("sync", "bombaclip sync",
                 NotificationManager.IMPORTANCE_LOW))
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -69,7 +73,7 @@ class ClipboardSyncService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        prefs.edit().putString("host", base).apply()
+        prefs.edit().putString("host", base).putBoolean("syncing", true).apply()
         // Reuse the persisted hash so a restart never re-copies content we
         // already pushed (no copy storm when toggling sync on and off).
         lastHash = if (prefs.getString("syncedHost", "") == base)
@@ -85,20 +89,20 @@ class ClipboardSyncService : Service() {
         return START_STICKY
     }
 
-    private fun notif() = Notification.Builder(this, "sync")
+    private fun notif() = NotificationCompat.Builder(this, "sync")
         .setContentTitle("bombaclip")
         .setContentText("syncing with $base")
         .setSmallIcon(android.R.drawable.stat_notify_sync)
         .setOngoing(true)
+        .setContentIntent(PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         .build()
 
     /** Hooks the phone clipboard listener (main thread only). */
     private fun startWatching() {
         running = true
-        mainHandler.post {
-            val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-            cm.addPrimaryClipChangedListener(clipListener)
-        }
+        mainHandler.post { clipboard.addPrimaryClipChangedListener(clipListener) }
         if (thread?.isAlive != true) {
             thread = Thread { loop() }.apply { start() }
         }
@@ -108,8 +112,12 @@ class ClipboardSyncService : Service() {
         while (running) {
             pollOnce()
             pollPhoneClip()
+            // Back off while the server is unreachable so a dead PC doesn't
+            // keep the radio/CPU hot; instant recovery on the next success.
+            val wait = if (failures == 0) POLL_MS
+                else minOf(POLL_MS shl minOf(failures, 3), MAX_BACKOFF_MS)
             try {
-                Thread.sleep(1500)
+                Thread.sleep(wait)
             } catch (e: InterruptedException) {
                 break // stop requested via onDestroy
             }
@@ -119,14 +127,20 @@ class ClipboardSyncService : Service() {
     private fun pollOnce() {
         try {
             val (state, ok) = Api.poll(base, lastHash)
-            if (ok && state != null) {
+            if (!ok) {
+                failures++
+                return
+            }
+            failures = 0
+            if (state != null) {
                 lastHash = state.hash
                 applyToClipboard(state)
                 prefs.edit().putString("lastHash", lastHash)
                     .putString("syncedHost", base)
-                    .commit()
+                    .apply()
             }
         } catch (_: Exception) {
+            failures++
         }
     }
 
@@ -137,13 +151,18 @@ class ClipboardSyncService : Service() {
         val h = sha1(text.toByteArray())
         if (h == lastPhoneHash) return
         lastPhoneHash = h
-        Thread { Api.postText(base, text) }.start()
+        Api.postAsync { Api.postText(base, text) }
     }
 
+    /** Clipboard writes must run on a Looper thread; the poll loop has none. */
     private fun applyToClipboard(s: ClipState) {
-        val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         lastPhoneHash = s.hash
         if (s.kind == "image") {
+            val bytes = try {
+                Api.image(base)
+            } catch (_: Exception) {
+                return
+            }
             val ct = s.ct.ifBlank { "image/png" }
             val ext = when {
                 ct.contains("jpeg") -> "jpg"
@@ -153,21 +172,35 @@ class ClipboardSyncService : Service() {
                 else -> "img"
             }
             val file = File(cacheDir, "clip.$lastHash.$ext")
-            file.writeBytes(Api.image(base, s.hash))
+            try {
+                file.writeBytes(bytes)
+            } catch (_: Exception) {
+                return
+            }
+            pruneImageCache(keep = file.name)
             val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
             val description = android.content.ClipDescription("bombaclip", arrayOf(ct))
-            cm.setPrimaryClip(ClipData(description, ClipData.Item(uri)))
+            mainHandler.post { clipboard.setPrimaryClip(ClipData(description, ClipData.Item(uri))) }
         } else {
-            cm.setPrimaryClip(ClipData.newPlainText("bombaclip", s.text))
+            val clip = ClipData.newPlainText("bombaclip", s.text)
+            mainHandler.post { clipboard.setPrimaryClip(clip) }
+        }
+    }
+
+    /** Old image clips pile up in cacheDir otherwise — keep only the latest. */
+    private fun pruneImageCache(keep: String) {
+        try {
+            cacheDir.listFiles { f -> f.isFile && f.name.startsWith("clip.") && f.name != keep }
+                ?.forEach { runCatching { it.delete() } }
+        } catch (_: Exception) {
         }
     }
 
     /** A phone copy happened. If it's not one we just wrote to the clipboard,
-     *  push it to the PC. Set on main thread to avoid re-entrancy issues. */
+     *  push it to the PC. Runs on the main thread (listener requirement). */
     private fun onPhoneClipChanged() {
         if (!running) return
-        val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = cm.primaryClip
+        val clip = clipboard.primaryClip
         if (clip == null) {
             // Background copy on Android 15+: primaryClip is null here, but
             // our poll loop picks it up via Shizuku seconds later.
@@ -182,17 +215,13 @@ class ClipboardSyncService : Service() {
                 val h = sha1(bytes)
                 if (h == lastPhoneHash) return // our own write from the poll
                 lastPhoneHash = h
-                Thread {
-                    Api.postImage(base, bytes)
-                }.start()
+                Api.postAsync { Api.postImage(base, bytes) }
             } else {
                 val text = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
                 val h = sha1(text.toByteArray())
                 if (h == lastPhoneHash) return // our own write from the poll
                 lastPhoneHash = h
-                Thread {
-                    Api.postText(base, text)
-                }.start()
+                Api.postAsync { Api.postText(base, text) }
             }
         } catch (_: Exception) {
             // ignore clipboard read races
@@ -206,11 +235,9 @@ class ClipboardSyncService : Service() {
     override fun onDestroy() {
         running = false
         thread?.interrupt()
-        mainHandler.post {
-            getSystemService(CLIPBOARD_SERVICE).let {
-                (it as ClipboardManager).removePrimaryClipChangedListener(clipListener)
-            }
-        }
+        thread = null
+        prefs.edit().putBoolean("syncing", false).apply()
+        mainHandler.post { clipboard.removePrimaryClipChangedListener(clipListener) }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

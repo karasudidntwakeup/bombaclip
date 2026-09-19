@@ -6,8 +6,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
 /** Appears in the system share sheet to push content straight to the PC. */
 class ShareReceiverActivity : Activity() {
@@ -24,14 +22,31 @@ class ShareReceiverActivity : Activity() {
         Api.token = prefs.getString("token", "").orEmpty()
 
         val intent = intent ?: run { finish(); return }
-        val action = intent.action
         val type = intent.type?.lowercase() ?: ""
         val sendText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
-        val sendUri = if (type.startsWith("image/")) intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) else null
+        val sendUri = if (type.startsWith("image/")) {
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+            }
+        } else null
 
         when {
-            sendUri != null -> Thread { sendImage(host, sendUri, type) }.start()
-            !sendText.isNullOrEmpty() -> Thread { sendText(host, sendText) }.start()
+            sendUri != null -> Api.postAsync {
+                if (sendImage(host, sendUri, type)) toast("sent to PC")
+                else toast("failed to send")
+                runOnUiThread { finish() }
+            }
+            !sendText.isNullOrEmpty() -> Api.postAsync {
+                if (runCatching { Api.postText(host, sendText) }.getOrDefault(false)) {
+                    toast("sent to PC")
+                } else {
+                    toast("failed to send")
+                }
+                runOnUiThread { finish() }
+            }
             else -> {
                 toast("nothing to share")
                 finish()
@@ -39,53 +54,21 @@ class ShareReceiverActivity : Activity() {
         }
     }
 
-    private fun sendImage(host: String, uri: Uri, fallbackType: String) {
-        try {
-            val ct = contentResolver.getType(uri)?.lowercase()?.ifBlank { null } ?: fallbackType
+    private fun sendImage(host: String, uri: Uri, fallbackType: String): Boolean {
+        return try {
+            val ct = contentResolver.getType(uri)?.lowercase()?.ifBlank { null }
+                ?: fallbackType.ifBlank { "image/png" }
             val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes(MAX_BYTES) }
-            if (bytes == null) {
-                toast("could not read shared file")
-                return
-            }
-            post(host, bytes, ct.ifBlank { "image/png" })
-            toast("sent to PC")
-        } catch (e: Exception) {
-            toast("failed to send")
-        } finally {
-            finish()
+                ?: return false
+            Api.postImage(host, bytes, ct)
+        } catch (_: Exception) {
+            false
         }
     }
 
-    private fun sendText(host: String, text: String) {
-        try {
-            post(host, text.toByteArray(), "text/plain")
-            toast("sent to PC")
-        } catch (e: Exception) {
-            toast("failed to send")
-        } finally {
-            finish()
-        }
-    }
-
-    private fun post(host: String, body: ByteArray, ct: String) {
-        val c = URL("${host.trimEnd('/')}/clipboard").openConnection() as HttpURLConnection
-        try {
-            c.requestMethod = "POST"
-            c.connectTimeout = 3000
-            c.readTimeout = 4000
-            c.doOutput = true
-            c.setRequestProperty("Content-Type", ct)
-            if (Api.token.isNotEmpty()) c.setRequestProperty("Authorization", "Bearer ${Api.token}")
-            c.setFixedLengthStreamingMode(body.size)
-            c.outputStream.use { it.write(body) }
-            if (c.responseCode !in 200..299) throw RuntimeException("http ${c.responseCode}")
-        } finally {
-            c.disconnect()
-        }
-    }
-
+    /** Size-capped read. (No available() pre-check: it is only an estimate
+     *  and wrongly rejects valid streams on some providers.) */
     private fun InputStream.readBytes(max: Int): ByteArray? {
-        if (available() > max) return null
         val out = java.io.ByteArrayOutputStream()
         val buf = ByteArray(1 shl 16)
         var total = 0

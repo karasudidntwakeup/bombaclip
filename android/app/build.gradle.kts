@@ -13,8 +13,8 @@ android {
         applicationId = "bombaclip.karasu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "3.2"
+        versionCode = 6
+        versionName = "3.3"
     }
 
     signingConfigs {
@@ -37,7 +37,14 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 + resource shrinking: dead code (AppCompat/Material extras,
+            // Shizuku provider paths we never touch) is stripped from the APK.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             signingConfig = signingConfigs.getByName("release")
         }
     }

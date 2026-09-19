@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">bombaclip</string>
-    <string name="sync_running">bombaclip is syncing</string>
     <string name="server_hint">http://192.168.1.43:8080</string>
+    <string name="version_footer">bombaclip %1$s</string>
 </resources>

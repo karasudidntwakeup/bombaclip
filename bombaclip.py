@@ -263,7 +263,7 @@ button{background:#3b82f6;color:#fff;border:0;border-radius:.5rem;
 </style></head><body><main>
 <h1>bombaclip</h1>
 <p class="hint">Live view of your PC clipboard. Use the Android app
-(<code>dev.bombaclip</code>) to sync both ways; this page is read-only.</p>
+(<code>bombaclip.karasu</code>) to sync both ways; this page is read-only.</p>
 <label>PC clipboard (live)</label>
 <textarea id="from" readonly placeholder="(empty / non-text)"></textarea>
 <img id="fromimg" alt="">
