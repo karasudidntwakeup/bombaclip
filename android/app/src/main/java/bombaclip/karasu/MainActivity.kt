@@ -185,17 +185,29 @@ class MainActivity : AppCompatActivity() {
             shizukuAction.isEnabled = false
             return
         }
+        // Root and non-root phones converge here: Shizuku abstracts both.
+        // getUid tells which mode the server runs in (0 = root, 2000 = ADB).
+        val mode = try {
+            when (Shizuku.getUid()) {
+                0 -> "via root"
+                2000 -> "via ADB"
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+        val via = if (mode != null) " $mode" else ""
         val granted = try {
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         } catch (_: Exception) {
             false
         }
         if (granted) {
-            shizukuStatus.text = "ready for background sync"
+            shizukuStatus.text = "ready for background sync$via"
             shizukuAction.text = "Granted"
             shizukuAction.isEnabled = false
         } else {
-            shizukuStatus.text = "permission needed for background sync"
+            shizukuStatus.text = "permission needed for background sync$via"
             shizukuAction.text = "Authorize"
             shizukuAction.isEnabled = true
         }

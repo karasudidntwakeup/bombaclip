@@ -32,6 +32,15 @@ Normal background reads return nothing. bombaclip reads via
 mode. Install the app, authorize it in Shizuku, then start sync. With Shizuku
 dead or unauthorized, phone→PC only works while the app is on screen.
 
+### Rooted phones
+
+No app changes needed: start Shizuku itself "via root" (its Start button
+uses `su` automatically, and it can start on boot). bombaclip uses the same
+Shizuku API either way — the Device setup card shows whether Shizuku runs
+"via root" or "via ADB". Root mode just survives reboots and needs no
+wireless-debugging port open on your LAN. The app never asks for root
+itself and works fine on non-rooted phones too.
+
 ### Share to PC
 
 Works without Shizuku: share text or a photo via the Android share sheet and
